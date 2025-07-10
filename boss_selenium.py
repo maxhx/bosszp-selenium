@@ -27,6 +27,10 @@ edge_options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Applicati
 edge_service = Service(executable_path=driver_path)
 
 browser = webdriver.Edge(service=edge_service, options=edge_options)
+from selenium.webdriver.common.by import By
+from dbutils import DBUtils
+
+browser = webdriver.Edge()
 city_map = {
     "北京": ["北京"],
     "天津": ["天津"],
@@ -77,7 +81,7 @@ city_map = {
     "重庆": ["重庆"]
 }
 # 打开 boss 首页
-index_url = 'https://www.zhipin.com/guangzhou/?ka=city-sites-101280100'
+index_url = 'https://www.zhipin.com/?city=100010000&ka=city-sites-100010000'
 browser.get(index_url)
 
 # 模拟点击 互联网/AI 展示出岗位分类
