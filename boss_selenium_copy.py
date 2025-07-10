@@ -12,9 +12,11 @@ from selenium.webdriver.edge.service import Service
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from dbutils import DBUtils
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # 指定 WebDriver 路径
-driver_path = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe'
+driver_path = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe'
 
 # 创建 Edge Options 对象
 edge_options = Options()
@@ -87,16 +89,28 @@ show_ele.click()
 today = datetime.date.today().strftime('%Y-%m-%d')
 
 for i in range(85):
-    current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[
-        i]
+    current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i]
     current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
     sub_category = current_a.text
+
+    # 只抓取java或python相关岗位
+    if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
+        continue
+
     print("{}正在抓取{}--{}".format(today, current_category, sub_category))
     browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i].click()
+    
+    # 等待页面加载完成
+    WebDriverWait(browser, 10).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
+    )
+    # 再判断 document.body 是否存在
+    WebDriverWait(browser, 10).until(
+        lambda d: d.execute_script("return document.body != null")
+    )
     # 模拟滑动页面
     browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(10)
-    # 模拟滑动页面
     browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     job_detail = browser.find_elements(by=By.XPATH,
                                        value='//*[@id="wrap"]/div[2]/div[2]/div/div[1]/div[2]/ul/li')

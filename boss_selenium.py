@@ -27,10 +27,7 @@ edge_options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Applicati
 edge_service = Service(executable_path=driver_path)
 
 browser = webdriver.Edge(service=edge_service, options=edge_options)
-from selenium.webdriver.common.by import By
-from dbutils import DBUtils
 
-browser = webdriver.Edge()
 city_map = {
     "北京": ["北京"],
     "天津": ["天津"],
