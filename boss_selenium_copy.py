@@ -28,7 +28,7 @@ edge_options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Applicati
 # 创建 Service 对象
 edge_service = Service(executable_path=driver_path)
 
-browser = webdriver.Edge(service=edge_service, options=edge_options)
+browser = webdriver.Firefox()
 city_map = {
     "北京": ["北京"],
     "天津": ["天津"],
@@ -90,8 +90,10 @@ today = datetime.date.today().strftime('%Y-%m-%d')
 
 for i in range(85):
     current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i]
-    current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
-    sub_category = current_a.text
+    # current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
+    # sub_category = current_a.text
+    current_category = '后端开发'
+    sub_category = current_a.accessible_name 
 
     # 只抓取java或python相关岗位
     if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
@@ -113,23 +115,20 @@ for i in range(85):
     time.sleep(10)
     browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     job_detail = browser.find_elements(by=By.XPATH,
-                                       value='//*[@id="wrap"]/div[2]/div[2]/div/div[1]/div[2]/ul/li')
+                                       value='/html/body/div[1]/div[2]/div[3]/div/div/div[1]/ul/div')
     for job in job_detail:
         # 获取数据库连接
         db = DBUtils('localhost', 'root', '123456', 'spider_db')
         # 岗位名称
         try:
-            job_title = job.find_element(by=By.XPATH, value="./div[1]/a/div[1]/span[1]").text.strip()
+           job_title = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/a").text.strip()
         except:
             continue
-        # 工作地址
-        job_location = job.find_element(by=By.XPATH, value="./div[1]/a/div[1]/span[2]/span").text.strip()
-        # 企业名称
-        job_company = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/h3/a").text.strip()
-        # 行业类型
-        job_industry = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[1]").text.strip()
-        # 融资情况
-        job_finance = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[2]").text.strip()
+        try:
+            # 融资情况
+            job_finance = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[2]").text.strip()
+        except:
+            job_finance = '无'
         try:
             # 企业规模
             job_scale = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[3]").text.strip()
@@ -140,18 +139,43 @@ for i in range(85):
             job_welfare = job.find_element(by=By.XPATH, value="./div[2]/div").text.strip()
         except:
             job_welfare = '无'
-        # 薪资范围
-        job_salary_range = job.find_element(by=By.XPATH, value="./div[1]/a/div[2]/span[1]").text.strip()
-        # 工作年限
-        job_experience = job.find_element(by=By.XPATH, value="./div[1]/a/div[2]/ul/li[1]").text.strip()
-        # 学历要求
-        job_education = job.find_element(by=By.XPATH, value="./div[1]/a/div[2]/ul/li[2]").text.strip()
+        try:
+            # 薪资范围
+            job_salary_range = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/span").text.strip()
+        except:
+            job_salary_range = '无'
+        try:
+            # 工作年限
+            job_experience = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[1]").text.strip()
+        except:
+            job_experience = '无'
+        try:
+            # 学历要求
+            job_education = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[2]").text.strip()
+        except:
+            job_education = '无'
         # 技能要求
         try:
             job_skills = ','.join(
                 [skill.text.strip() for skill in job.find_elements(by=By.XPATH, value="./div[2]/ul/li")])
         except:
             job_skills = '无'
+        try:
+            # 行业类型
+            job_industry = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[1]").text.strip()
+        except:
+            job_industry = '无'       
+        try:
+            # 企业名称
+            job_company = job.find_element(By.XPATH, './/span[@class="boss-name"]').text.strip()
+        except:
+            job_company = '无'
+         # 工作地址
+        try:
+            job_location = job.find_element(By.XPATH, './/span[@class="company-location"]').text.strip()
+        except:
+            job_location = '无'    
+      
         province = ''
         city = job_location.split('·')[0]
         for p, cities in city_map.items():
