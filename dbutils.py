@@ -106,7 +106,7 @@ class DBUtils:
 # 定义 main 函数
 if __name__ == '__main__':
     # 实例化 DBUtils
-    db = DBUtils('localhost', 'root', '123456', 'spring')
+    db = DBUtils('localhost', 'root', '123456', 'spider_db')
 
     # 测试查询所有数据
     """ret = db.select_all("select * from t_user")
