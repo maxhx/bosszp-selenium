@@ -8,27 +8,14 @@ import datetime
 import time
 
 from selenium import webdriver
-from selenium.webdriver.edge.service import Service
-from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from dbutils import DBUtils
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# 指定 WebDriver 路径
-driver_path = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe'
-
-# 创建 Edge Options 对象
-edge_options = Options()
-edge_options.binary_location = r"C:\Program Files (x86)\Microsoft\Edge\Application\miedge.exe"  # 替换为你的实际路径
-
-# 在这里可以设置其他选项，例如无头模式
-# edge_options.add_argument('--headless')
-
-# 创建 Service 对象
-edge_service = Service(executable_path=driver_path)
-
+# 创建 Firefox 浏览器实例
 browser = webdriver.Firefox()
+
 city_map = {
     "北京": ["北京"],
     "天津": ["天津"],
@@ -185,12 +172,15 @@ for i in range(85):
         print(current_category, sub_category, job_title, province, job_location, job_company, job_industry, job_finance,
               job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills)
         # 保存到 MySQL 数据库
-        db.insert_data(
-            "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            args=(
-                current_category, sub_category, job_title, province, job_location, job_company, job_industry,
-                job_finance,
-                job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
+        # 先查重
+        check_sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
+        if not db.select_one(check_sql, (job_title, job_company, job_location)):
+            db.insert_data(
+                "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                args=(
+                    current_category, sub_category, job_title, province, job_location, job_company, job_industry,
+                    job_finance,
+                    job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
         db.close()
     try:
         # 退回到首页
