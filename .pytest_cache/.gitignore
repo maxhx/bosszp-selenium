@@ -1,0 +1,10 @@
+# Created by pytest automatically.
+.pytest_cache/
+__pycache__
+.vscode/
+.idea
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
