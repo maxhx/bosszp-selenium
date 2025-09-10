@@ -1,1 +1,9 @@
-[]
+[
+  "boss_selenium_copy.py::test_browser_only",
+  "test_boss_spider.py::test_browser_creation_function",
+  "test_boss_spider.py::test_city_mapping",
+  "test_boss_spider.py::test_city_province_mapping",
+  "test_boss_spider.py::test_config_loading",
+  "test_boss_spider.py::test_database_config",
+  "test_boss_spider.py::test_environment_variable"
+]

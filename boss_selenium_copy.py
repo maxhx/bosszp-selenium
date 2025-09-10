@@ -7,28 +7,153 @@
 import datetime
 import time
 import json
+import os
+import sys
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from dbutils import DBUtils
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.firefox.options import Options
 
 # 配置环境
 ENVIRONMENT = 'production'  # 改成 'testing' 或 'production' 即可
+DEBUG_MODE = False  # 设置为True启用调试模式
 
 # 读取配置文件
-with open('config.json', 'r') as f:
-    configs = json.load(f)
+def load_config():
+    """加载配置文件"""
+    try:
+        with open('config.json', 'r') as f:
+            configs = json.load(f)
+        return configs.get(ENVIRONMENT)
+    except FileNotFoundError:
+        print("警告: config.json文件未找到")
+        return None
+    except Exception as e:
+        print("警告: 配置文件加载失败: {}".format(e))
+        return None
 
-db_config = configs.get(ENVIRONMENT)
-if not db_config:
-    raise ValueError(f"未找到环境 '{ENVIRONMENT}' 的数据库配置！")
+# 延迟加载配置，避免在导入时出错
+db_config = None
 
 # 连接数据库
 # db = DBUtils(**db_config)    
 
-# 创建 Firefox 浏览器实例
-browser = webdriver.Firefox()
+def create_browser():
+    """创建Firefox浏览器实例"""
+    print("正在创建Firefox浏览器实例...")
+    
+    try:
+        options = Options()
+        
+        # 服务器环境优化选项
+        if not DEBUG_MODE:
+            options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--disable-extensions')
+        options.add_argument('--disable-plugins')
+        if not DEBUG_MODE:
+            options.add_argument('--disable-images')
+            options.add_argument('--disable-javascript')
+        options.add_argument('--disable-web-security')
+        options.add_argument('--disable-features=VizDisplayCompositor')
+        
+        # 设置超时
+        options.add_argument('--timeout=30')
+        
+        # 尝试不同的Firefox路径
+        firefox_paths = [
+            "/usr/bin/firefox",
+            "/usr/bin/firefox-esr", 
+            "/snap/bin/firefox",
+            "/opt/firefox/firefox",
+            "/usr/local/bin/firefox"
+        ]
+        
+        firefox_found = False
+        for path in firefox_paths:
+            if os.path.exists(path):
+                print("找到Firefox: {}".format(path))
+                options.binary_location = path
+                firefox_found = True
+                break
+        
+        if not firefox_found:
+            print("警告: 未找到Firefox浏览器，使用默认路径")
+        
+        # 检查geckodriver
+        geckodriver_paths = [
+            "/usr/local/bin/geckodriver",
+            "/usr/bin/geckodriver",
+            "/snap/bin/geckodriver"
+        ]
+        
+        geckodriver_found = False
+        geckodriver_path = None
+        for path in geckodriver_paths:
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                print("找到可执行的geckodriver: {}".format(path))
+                geckodriver_found = True
+                geckodriver_path = path
+                break
+        
+        if not geckodriver_found:
+            print("❌ 未找到可执行的geckodriver")
+            print("请运行: chmod +x update_geckodriver.sh && ./update_geckodriver.sh")
+            return None
+        
+        # 测试geckodriver版本
+        try:
+            import subprocess
+            result = subprocess.run([geckodriver_path, '--version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print("geckodriver版本: {}".format(result.stdout.strip()))
+            else:
+                print("⚠️  geckodriver版本检查失败")
+        except Exception as e:
+            print("⚠️  geckodriver版本检查出错: {}".format(e))
+        
+        # 检查虚拟显示环境
+        display = os.environ.get('DISPLAY')
+        if not display:
+            print("⚠️  未设置DISPLAY环境变量")
+            print("建议运行: export DISPLAY=:99")
+            print("或使用启动脚本: chmod +x start_ubuntu.sh && ./start_ubuntu.sh")
+        
+        print("正在启动Firefox浏览器...")
+        
+        # 检查是否在Ubuntu服务器环境
+        if os.path.exists('/etc/os-release'):
+            with open('/etc/os-release', 'r') as f:
+                os_info = f.read()
+                if 'ubuntu' in os_info.lower():
+                    print("检测到Ubuntu环境，检查虚拟显示...")
+                    display = os.environ.get('DISPLAY')
+                    if not display:
+                        print("❌ 未设置DISPLAY环境变量")
+                        print("请先运行以下命令:")
+                        print("apt-get install xvfb")
+                        print("Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &")
+                        print("export DISPLAY=:99")
+                        print("然后重新运行程序")
+                        return None
+        
+        print("正在启动Firefox浏览器...")
+        browser = webdriver.Firefox(options=options)
+        print("Firefox浏览器启动成功!")
+        return browser
+        
+    except Exception as e:
+        print("创建浏览器失败: {}".format(e))
+        print("可能的解决方案:")
+        print("1. 安装Firefox: apt-get install firefox-esr")
+        print("2. 安装geckodriver: wget https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz")
+        print("3. 检查权限: chmod +x /usr/local/bin/geckodriver")
+        return None
 
 city_map = {
     "北京": ["北京"],
@@ -79,138 +204,188 @@ city_map = {
              "东方", "保亭", "琼中", "琼海", "儋州", "昌江"],
     "重庆": ["重庆"]
 }
-# 打开 boss 首页
-index_url = 'https://www.zhipin.com/guangzhou/?ka=city-sites-101280100'
-browser.get(index_url)
 
-# 模拟点击 互联网/AI 展示出岗位分类
-show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
-show_ele.click()
-
-today = datetime.date.today().strftime('%Y-%m-%d')
-
-for i in range(85):
-    current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i]
-    # current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
-    # sub_category = current_a.text
-    current_category = '后端开发'
-    sub_category = current_a.accessible_name 
-
-    # 只抓取java或python相关岗位
-    if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
-        continue
-
-    print("{}正在抓取{}--{}".format(today, current_category, sub_category))
-    browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i].click()
+def main():
+    """主函数"""
+    # 加载配置
+    global db_config
+    db_config = load_config()
+    if not db_config:
+        print("无法加载数据库配置，程序退出")
+        return
     
-    # 等待页面加载完成
-    WebDriverWait(browser, 10).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-    # 再判断 document.body 是否存在
-    WebDriverWait(browser, 10).until(
-        lambda d: d.execute_script("return document.body != null")
-    )
-    # 模拟滑动页面
-    browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(10)
-    browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    job_detail = browser.find_elements(by=By.XPATH,
-                                       value='/html/body/div[1]/div[2]/div[3]/div/div/div[1]/ul/div')
-    for job in job_detail:
-        # 获取数据库连接
-        # db = DBUtils('localhost', 'root', '123456', 'spider_db')
-        db = DBUtils(
-                host=db_config["host"],
-                user=db_config["user"],
-                password=db_config["password"],
-                db=db_config["db"]
-            )
-        # 岗位名称
-        try:
-           job_title = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/a").text.strip()
-        except:
-            continue
-        try:
-            # 融资情况
-            job_finance = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[2]").text.strip()
-        except:
-            job_finance = '无'
-        try:
-            # 企业规模
-            job_scale = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[3]").text.strip()
-        except:
-            job_scale = "无"
-        try:
-            # 企业福利
-            job_welfare = job.find_element(by=By.XPATH, value="./div[2]/div").text.strip()
-        except:
-            job_welfare = '无'
-        try:
-            # 薪资范围
-            job_salary_range = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/span").text.strip()
-        except:
-            job_salary_range = '无'
-        try:
-            # 工作年限
-            job_experience = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[1]").text.strip()
-        except:
-            job_experience = '无'
-        try:
-            # 学历要求
-            job_education = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[2]").text.strip()
-        except:
-            job_education = '无'
-        # 技能要求
-        try:
-            job_skills = ','.join(
-                [skill.text.strip() for skill in job.find_elements(by=By.XPATH, value="./div[2]/ul/li")])
-        except:
-            job_skills = '无'
-        try:
-            # 行业类型
-            job_industry = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[1]").text.strip()
-        except:
-            job_industry = '无'       
-        try:
-            # 企业名称
-            job_company = job.find_element(By.XPATH, './/span[@class="boss-name"]').text.strip()
-        except:
-            job_company = '无'
-         # 工作地址
-        try:
-            job_location = job.find_element(By.XPATH, './/span[@class="company-location"]').text.strip()
-        except:
-            job_location = '无'    
-      
-        province = ''
-        city = job_location.split('·')[0]
-        for p, cities in city_map.items():
-            if city in cities:
-                province = p
-                break
-        print(current_category, sub_category, job_title, province, job_location, job_company, job_industry, job_finance,
-              job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills)
-        # 保存到 MySQL 数据库
-        # 先查重
-        check_sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
-        if not db.select_one(check_sql, (job_title, job_company, job_location)):
-            db.insert_data(
-                "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                args=(
-                    current_category, sub_category, job_title, province, job_location, job_company, job_industry,
-                    job_finance,
-                    job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
-        db.close()
+    # 创建浏览器实例
+    browser = create_browser()
+    if not browser:
+        print("无法创建浏览器实例，程序退出")
+        return
+    
     try:
-        # 退回到首页
-        browser.back()
-        # 模拟点击 互联网/AI 展示出岗位分类
-        show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
-        show_ele.click()
-    except:
+        # 打开 boss 首页
+        index_url = 'https://www.zhipin.com/guangzhou/?ka=city-sites-101280100'
         browser.get(index_url)
+
         # 模拟点击 互联网/AI 展示出岗位分类
         show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
         show_ele.click()
-time.sleep(10)
+
+        today = datetime.date.today().strftime('%Y-%m-%d')
+
+        for i in range(85):
+            current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i]
+            # current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
+            # sub_category = current_a.text
+            current_category = '后端开发'
+            sub_category = current_a.accessible_name 
+
+            # 只抓取java或python相关岗位
+            if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
+                continue
+
+            print("{}正在抓取{}--{}".format(today, current_category, sub_category))
+            browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i].click()
+            
+            # 等待页面加载完成
+            WebDriverWait(browser, 10).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            # 再判断 document.body 是否存在
+            WebDriverWait(browser, 10).until(
+                lambda d: d.execute_script("return document.body != null")
+            )
+            # 模拟滑动页面
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(10)
+            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            job_detail = browser.find_elements(by=By.XPATH,
+                                               value='/html/body/div[1]/div[2]/div[3]/div/div/div[1]/ul/div')
+            for job in job_detail:
+                # 获取数据库连接
+                # db = DBUtils('localhost', 'root', '123456', 'spider_db')
+                db = DBUtils(
+                        host=db_config["host"],
+                        user=db_config["user"],
+                        password=db_config["password"],
+                        db=db_config["db"]
+                    )
+                # 岗位名称
+                try:
+                   job_title = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/a").text.strip()
+                except:
+                    continue
+                try:
+                    # 融资情况
+                    job_finance = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[2]").text.strip()
+                except:
+                    job_finance = '无'
+                try:
+                    # 企业规模
+                    job_scale = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[3]").text.strip()
+                except:
+                    job_scale = "无"
+                try:
+                    # 企业福利
+                    job_welfare = job.find_element(by=By.XPATH, value="./div[2]/div").text.strip()
+                except:
+                    job_welfare = '无'
+                try:
+                    # 薪资范围
+                    job_salary_range = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/span").text.strip()
+                except:
+                    job_salary_range = '无'
+                try:
+                    # 工作年限
+                    job_experience = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[1]").text.strip()
+                except:
+                    job_experience = '无'
+                try:
+                    # 学历要求
+                    job_education = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[2]").text.strip()
+                except:
+                    job_education = '无'
+                # 技能要求
+                try:
+                    job_skills = ','.join(
+                        [skill.text.strip() for skill in job.find_elements(by=By.XPATH, value="./div[2]/ul/li")])
+                except:
+                    job_skills = '无'
+                try:
+                    # 行业类型
+                    job_industry = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[1]").text.strip()
+                except:
+                    job_industry = '无'       
+                try:
+                    # 企业名称
+                    job_company = job.find_element(By.XPATH, './/span[@class="boss-name"]').text.strip()
+                except:
+                    job_company = '无'
+                 # 工作地址
+                try:
+                    job_location = job.find_element(By.XPATH, './/span[@class="company-location"]').text.strip()
+                except:
+                    job_location = '无'    
+              
+                province = ''
+                city = job_location.split('·')[0]
+                for p, cities in city_map.items():
+                    if city in cities:
+                        province = p
+                        break
+                print(current_category, sub_category, job_title, province, job_location, job_company, job_industry, job_finance,
+                      job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills)
+                # 保存到 MySQL 数据库
+                # 先查重
+                check_sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
+                if not db.select_one(check_sql, (job_title, job_company, job_location)):
+                    db.insert_data(
+                        "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        args=(
+                            current_category, sub_category, job_title, province, job_location, job_company, job_industry,
+                            job_finance,
+                            job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
+                db.close()
+            try:
+                # 退回到首页
+                browser.back()
+                # 模拟点击 互联网/AI 展示出岗位分类
+                show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
+                show_ele.click()
+            except:
+                browser.get(index_url)
+                # 模拟点击 互联网/AI 展示出岗位分类
+                show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
+                show_ele.click()
+        time.sleep(10)
+    except Exception as e:
+        print("爬虫运行出错: {}".format(e))
+    finally:
+        if browser:
+            browser.quit()
+            print("浏览器已关闭")
+
+def test_browser_only():
+    """仅测试浏览器创建，不运行爬虫"""
+    print("=== 浏览器测试模式 ===")
+    
+    # 加载配置（测试模式不需要数据库配置）
+    print("跳过数据库配置检查...")
+    
+    browser = create_browser()
+    if browser:
+        print("✅ 浏览器创建成功!")
+        try:
+            browser.get("https://www.baidu.com")
+            print("✅ 页面访问成功!")
+            browser.quit()
+            print("✅ 浏览器已关闭")
+        except Exception as e:
+            print("❌ 页面访问失败: {}".format(e))
+            browser.quit()
+    else:
+        print("❌ 浏览器创建失败")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        test_browser_only()
+    else:
+        main()
