@@ -12,7 +12,7 @@ def run_boss_spider():
 if __name__ == "__main__":
     scheduler = BlockingScheduler()
     # 每小时执行一次
-    scheduler.add_job(run_boss_spider, 'interval', hours=1)
-    # scheduler.add_job(run_boss_spider, 'interval', minutes=5)
-    print("定时任务已启动，每1小时执行一次 boss_selenium_copy.py")
+    # scheduler.add_job(run_boss_spider, 'interval', hours=1)
+    scheduler.add_job(run_boss_spider, 'interval', minutes=15)
+    print("定时任务已启动，每15分钟执行一次 boss_selenium_copy.py")
     scheduler.start() 

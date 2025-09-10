@@ -6,12 +6,26 @@
 # @version : V1
 import datetime
 import time
-
+import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from dbutils import DBUtils
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+# 配置环境
+ENVIRONMENT = 'production'  # 改成 'testing' 或 'production' 即可
+
+# 读取配置文件
+with open('config.json', 'r') as f:
+    configs = json.load(f)
+
+db_config = configs.get(ENVIRONMENT)
+if not db_config:
+    raise ValueError(f"未找到环境 '{ENVIRONMENT}' 的数据库配置！")
+
+# 连接数据库
+# db = DBUtils(**db_config)    
 
 # 创建 Firefox 浏览器实例
 browser = webdriver.Firefox()
@@ -105,7 +119,13 @@ for i in range(85):
                                        value='/html/body/div[1]/div[2]/div[3]/div/div/div[1]/ul/div')
     for job in job_detail:
         # 获取数据库连接
-        db = DBUtils('localhost', 'root', '123456', 'spider_db')
+        # db = DBUtils('localhost', 'root', '123456', 'spider_db')
+        db = DBUtils(
+                host=db_config["host"],
+                user=db_config["user"],
+                password=db_config["password"],
+                db=db_config["db"]
+            )
         # 岗位名称
         try:
            job_title = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/a").text.strip()
