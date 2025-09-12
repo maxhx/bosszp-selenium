@@ -9,6 +9,8 @@ import time
 import json
 import os
 import sys
+import logging
+from logging.handlers import RotatingFileHandler
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from dbutils import DBUtils
@@ -20,18 +22,112 @@ from selenium.webdriver.firefox.options import Options
 ENVIRONMENT = 'production'  # 改成 'testing' 或 'production' 即可
 DEBUG_MODE = False  # 设置为True启用调试模式
 
+# 配置日志系统
+def setup_logging():
+    """设置日志系统"""
+    # 创建日志目录
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, mode=0o755)  # Linux权限：rwxr-xr-x
+    
+    # 设置日志格式
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    # 配置根日志器
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    
+    # 清除已有的处理器
+    logger.handlers.clear()
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(log_format, date_format)
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    # 文件处理器 - 所有日志
+    file_handler = RotatingFileHandler(
+        os.path.join(log_dir, 'boss_spider.log'),
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(log_format, date_format)
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # 错误日志文件处理器
+    error_handler = RotatingFileHandler(
+        os.path.join(log_dir, 'boss_spider_error.log'),
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=3,
+        encoding='utf-8'
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(file_formatter)
+    logger.addHandler(error_handler)
+    
+    # 爬虫专用日志文件
+    spider_handler = RotatingFileHandler(
+        os.path.join(log_dir, 'spider_data.log'),
+        maxBytes=20*1024*1024,  # 20MB
+        backupCount=10,
+        encoding='utf-8'
+    )
+    spider_handler.setLevel(logging.INFO)
+    spider_formatter = logging.Formatter('%(asctime)s - %(message)s', date_format)
+    spider_handler.setFormatter(spider_formatter)
+    
+    # 创建爬虫专用日志器
+    spider_logger = logging.getLogger('spider')
+    spider_logger.setLevel(logging.INFO)
+    spider_logger.addHandler(spider_handler)
+    spider_logger.propagate = False  # 不传播到根日志器
+    
+    return logger
+
+# 初始化日志系统
+logger = setup_logging()
+
+def set_log_file_permissions():
+    """设置日志文件权限（Linux环境）"""
+    try:
+        import stat
+        log_dir = 'logs'
+        if os.path.exists(log_dir):
+            # 设置日志目录权限
+            os.chmod(log_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)  # 755
+            
+            # 设置日志文件权限
+            log_files = ['boss_spider.log', 'boss_spider_error.log', 'spider_data.log']
+            for log_file in log_files:
+                log_path = os.path.join(log_dir, log_file)
+                if os.path.exists(log_path):
+                    os.chmod(log_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 644
+            logger.debug("日志文件权限设置完成")
+    except Exception as e:
+        logger.warning("设置日志文件权限失败: {}".format(e))
+
+# 设置日志文件权限
+set_log_file_permissions()
+
 # 读取配置文件
 def load_config():
     """加载配置文件"""
     try:
         with open('config.json', 'r') as f:
             configs = json.load(f)
+        logger.info("配置文件加载成功，当前环境: {}".format(ENVIRONMENT))
         return configs.get(ENVIRONMENT)
     except FileNotFoundError:
-        print("警告: config.json文件未找到")
+        logger.warning("config.json文件未找到")
         return None
     except Exception as e:
-        print("警告: 配置文件加载失败: {}".format(e))
+        logger.error("配置文件加载失败: {}".format(e))
         return None
 
 # 延迟加载配置，避免在导入时出错
@@ -42,7 +138,7 @@ db_config = None
 
 def create_browser():
     """创建Firefox浏览器实例"""
-    print("正在创建Firefox浏览器实例...")
+    logger.info("正在创建Firefox浏览器实例...")
     
     try:
         options = Options()
@@ -76,13 +172,13 @@ def create_browser():
         firefox_found = False
         for path in firefox_paths:
             if os.path.exists(path):
-                print("找到Firefox: {}".format(path))
+                logger.info("找到Firefox: {}".format(path))
                 options.binary_location = path
                 firefox_found = True
                 break
         
         if not firefox_found:
-            print("警告: 未找到Firefox浏览器，使用默认路径")
+            logger.warning("未找到Firefox浏览器，使用默认路径")
         
         # 检查geckodriver
         geckodriver_paths = [
@@ -95,14 +191,14 @@ def create_browser():
         geckodriver_path = None
         for path in geckodriver_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
-                print("找到可执行的geckodriver: {}".format(path))
+                logger.info("找到可执行的geckodriver: {}".format(path))
                 geckodriver_found = True
                 geckodriver_path = path
                 break
         
         if not geckodriver_found:
-            print("❌ 未找到可执行的geckodriver")
-            print("请运行: chmod +x update_geckodriver.sh && ./update_geckodriver.sh")
+            logger.error("未找到可执行的geckodriver")
+            logger.error("请运行: chmod +x update_geckodriver.sh && ./update_geckodriver.sh")
             return None
         
         # 测试geckodriver版本
@@ -111,48 +207,48 @@ def create_browser():
             result = subprocess.run([geckodriver_path, '--version'], 
                                   capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                print("geckodriver版本: {}".format(result.stdout.strip()))
+                logger.info("geckodriver版本: {}".format(result.stdout.strip()))
             else:
-                print("⚠️  geckodriver版本检查失败")
+                logger.warning("geckodriver版本检查失败")
         except Exception as e:
-            print("⚠️  geckodriver版本检查出错: {}".format(e))
+            logger.warning("geckodriver版本检查出错: {}".format(e))
         
         # 检查虚拟显示环境
         display = os.environ.get('DISPLAY')
         if not display:
-            print("⚠️  未设置DISPLAY环境变量")
-            print("建议运行: export DISPLAY=:99")
-            print("或使用启动脚本: chmod +x start_ubuntu.sh && ./start_ubuntu.sh")
+            logger.warning("未设置DISPLAY环境变量")
+            logger.warning("建议运行: export DISPLAY=:99")
+            logger.warning("或使用启动脚本: chmod +x start_ubuntu.sh && ./start_ubuntu.sh")
         
-        print("正在启动Firefox浏览器...")
+        logger.info("正在启动Firefox浏览器...")
         
         # 检查是否在Ubuntu服务器环境
         if os.path.exists('/etc/os-release'):
             with open('/etc/os-release', 'r') as f:
                 os_info = f.read()
                 if 'ubuntu' in os_info.lower():
-                    print("检测到Ubuntu环境，检查虚拟显示...")
+                    logger.info("检测到Ubuntu环境，检查虚拟显示...")
                     display = os.environ.get('DISPLAY')
                     if not display:
-                        print("❌ 未设置DISPLAY环境变量")
-                        print("请先运行以下命令:")
-                        print("apt-get install xvfb")
-                        print("Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &")
-                        print("export DISPLAY=:99")
-                        print("然后重新运行程序")
+                        logger.error("未设置DISPLAY环境变量")
+                        logger.error("请先运行以下命令:")
+                        logger.error("apt-get install xvfb")
+                        logger.error("Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &")
+                        logger.error("export DISPLAY=:99")
+                        logger.error("然后重新运行程序")
                         return None
         
-        print("正在启动Firefox浏览器...")
+        logger.info("正在启动Firefox浏览器...")
         browser = webdriver.Firefox(options=options)
-        print("Firefox浏览器启动成功!")
+        logger.info("Firefox浏览器启动成功!")
         return browser
         
     except Exception as e:
-        print("创建浏览器失败: {}".format(e))
-        print("可能的解决方案:")
-        print("1. 安装Firefox: apt-get install firefox-esr")
-        print("2. 安装geckodriver: wget https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz")
-        print("3. 检查权限: chmod +x /usr/local/bin/geckodriver")
+        logger.error("创建浏览器失败: {}".format(e))
+        logger.error("可能的解决方案:")
+        logger.error("1. 安装Firefox: apt-get install firefox-esr")
+        logger.error("2. 安装geckodriver: wget https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz")
+        logger.error("3. 检查权限: chmod +x /usr/local/bin/geckodriver")
         return None
 
 city_map = {
@@ -207,45 +303,54 @@ city_map = {
 
 def main():
     """主函数"""
+    logger.info("=== Boss直聘爬虫开始运行 ===")
+    
     # 加载配置
     global db_config
     db_config = load_config()
     if not db_config:
-        print("无法加载数据库配置，程序退出")
+        logger.error("无法加载数据库配置，程序退出")
         return
     
     # 创建浏览器实例
     browser = create_browser()
     if not browser:
-        print("无法创建浏览器实例，程序退出")
+        logger.error("无法创建浏览器实例，程序退出")
         return
     
     try:
         # 打开 boss 首页
         index_url = 'https://www.zhipin.com/guangzhou/?ka=city-sites-101280100'
+        logger.info("正在访问Boss直聘首页: {}".format(index_url))
         browser.get(index_url)
 
         # 模拟点击 互联网/AI 展示出岗位分类
+        logger.info("正在点击互联网/AI分类...")
         show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
         show_ele.click()
 
         today = datetime.date.today().strftime('%Y-%m-%d')
-
+        logger.info("开始抓取职位数据，日期: {}".format(today))
+        
+        # 获取爬虫专用日志器
+        spider_logger = logging.getLogger('spider')
+        
         for i in range(85):
             current_a = browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i]
-            # current_category = current_a.find_element(by=By.XPATH, value='../../h4').text
-            # sub_category = current_a.text
             current_category = '后端开发'
             sub_category = current_a.accessible_name 
 
             # 只抓取java或python相关岗位
             if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
+                logger.debug("跳过非目标岗位: {}".format(sub_category))
                 continue
 
-            print("{}正在抓取{}--{}".format(today, current_category, sub_category))
+            logger.info("正在抓取{}--{}".format(current_category, sub_category))
+            spider_logger.info("开始抓取: {} - {}".format(current_category, sub_category))
             browser.find_elements(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/div/ul/li/div/a')[i].click()
             
             # 等待页面加载完成
+            logger.debug("等待页面加载完成...")
             WebDriverWait(browser, 10).until(
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
@@ -254,75 +359,91 @@ def main():
                 lambda d: d.execute_script("return document.body != null")
             )
             # 模拟滑动页面
+            logger.debug("模拟滑动页面...")
             browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(10)
             browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             job_detail = browser.find_elements(by=By.XPATH,
                                                value='/html/body/div[1]/div[2]/div[3]/div/div/div[1]/ul/div')
+            logger.info("找到{}个职位信息".format(len(job_detail)))
             for job in job_detail:
                 # 获取数据库连接
-                # db = DBUtils('localhost', 'root', '123456', 'spider_db')
-                db = DBUtils(
+                try:
+                    db = DBUtils(
                         host=db_config["host"],
                         user=db_config["user"],
                         password=db_config["password"],
                         db=db_config["db"]
                     )
+                except Exception as e:
+                    logger.error("数据库连接失败: {}".format(e))
+                    continue
                 # 岗位名称
                 try:
                    job_title = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/a").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取岗位名称失败: {}".format(e))
                     continue
                 try:
                     # 融资情况
                     job_finance = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[2]").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取融资情况失败: {}".format(e))
                     job_finance = '无'
                 try:
                     # 企业规模
                     job_scale = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[3]").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取企业规模失败: {}".format(e))
                     job_scale = "无"
                 try:
                     # 企业福利
                     job_welfare = job.find_element(by=By.XPATH, value="./div[2]/div").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取企业福利失败: {}".format(e))
                     job_welfare = '无'
                 try:
                     # 薪资范围
                     job_salary_range = job.find_element(by=By.XPATH, value="./div/li/div[1]/div/span").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取薪资范围失败: {}".format(e))
                     job_salary_range = '无'
                 try:
                     # 工作年限
                     job_experience = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[1]").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取工作年限失败: {}".format(e))
                     job_experience = '无'
                 try:
                     # 学历要求
                     job_education = job.find_element(by=By.XPATH, value="./div/li/div[1]/ul/li[2]").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取学历要求失败: {}".format(e))
                     job_education = '无'
                 # 技能要求
                 try:
                     job_skills = ','.join(
                         [skill.text.strip() for skill in job.find_elements(by=By.XPATH, value="./div[2]/ul/li")])
-                except:
+                except Exception as e:
+                    logger.debug("获取技能要求失败: {}".format(e))
                     job_skills = '无'
                 try:
                     # 行业类型
                     job_industry = job.find_element(by=By.XPATH, value="./div[1]/div/div[2]/ul/li[1]").text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取行业类型失败: {}".format(e))
                     job_industry = '无'       
                 try:
                     # 企业名称
                     job_company = job.find_element(By.XPATH, './/span[@class="boss-name"]').text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取企业名称失败: {}".format(e))
                     job_company = '无'
                  # 工作地址
                 try:
                     job_location = job.find_element(By.XPATH, './/span[@class="company-location"]').text.strip()
-                except:
+                except Exception as e:
+                    logger.debug("获取工作地址失败: {}".format(e))
                     job_location = '无'    
               
                 province = ''
@@ -331,58 +452,75 @@ def main():
                     if city in cities:
                         province = p
                         break
-                print(current_category, sub_category, job_title, province, job_location, job_company, job_industry, job_finance,
-                      job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills)
+                
+                # 记录抓取到的职位信息
+                logger.info("抓取到职位: {} - {} - {}".format(job_title, job_company, job_location))
+                spider_logger.info("职位信息: {}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}".format(
+                    current_category, sub_category, job_title, province, job_location, job_company, job_industry,
+                    job_finance, job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
+                
                 # 保存到 MySQL 数据库
-                # 先查重
-                check_sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
-                if not db.select_one(check_sql, (job_title, job_company, job_location)):
-                    db.insert_data(
-                        "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        args=(
-                            current_category, sub_category, job_title, province, job_location, job_company, job_industry,
-                            job_finance,
-                            job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
-                db.close()
+                try:
+                    # 先查重
+                    check_sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
+                    if not db.select_one(check_sql, (job_title, job_company, job_location)):
+                        db.insert_data(
+                            "insert into job_info(category, sub_category,job_title,province,job_location,job_company,job_industry,job_finance,job_scale,job_welfare,job_salary_range,job_experience,job_education,job_skills,create_time) values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                            args=(
+                                current_category, sub_category, job_title, province, job_location, job_company, job_industry,
+                                job_finance,
+                                job_scale, job_welfare, job_salary_range, job_experience, job_education, job_skills, today))
+                        logger.info("成功保存职位: {} - {}".format(job_title, job_company))
+                    else:
+                        logger.debug("职位已存在，跳过: {} - {}".format(job_title, job_company))
+                except Exception as e:
+                    logger.error("保存职位到数据库失败: {}".format(e))
+                finally:
+                    db.close()
             try:
                 # 退回到首页
+                logger.debug("返回首页...")
                 browser.back()
                 # 模拟点击 互联网/AI 展示出岗位分类
                 show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
                 show_ele.click()
-            except:
+            except Exception as e:
+                logger.warning("返回首页失败，重新访问: {}".format(e))
                 browser.get(index_url)
                 # 模拟点击 互联网/AI 展示出岗位分类
                 show_ele = browser.find_element(by=By.XPATH, value='//*[@id="main"]/div/div[1]/div/div[1]/dl[1]/dd/b')
                 show_ele.click()
+        logger.info("=== Boss直聘爬虫运行完成 ===")
         time.sleep(10)
     except Exception as e:
-        print("爬虫运行出错: {}".format(e))
+        logger.error("爬虫运行出错: {}".format(e))
+        logger.exception("详细错误信息:")  # 记录完整的异常堆栈
     finally:
         if browser:
+            logger.info("正在关闭浏览器...")
             browser.quit()
-            print("浏览器已关闭")
+            logger.info("浏览器已关闭")
 
 def test_browser_only():
     """仅测试浏览器创建，不运行爬虫"""
-    print("=== 浏览器测试模式 ===")
+    logger.info("=== 浏览器测试模式 ===")
     
     # 加载配置（测试模式不需要数据库配置）
-    print("跳过数据库配置检查...")
+    logger.info("跳过数据库配置检查...")
     
     browser = create_browser()
     if browser:
-        print("✅ 浏览器创建成功!")
+        logger.info("✅ 浏览器创建成功!")
         try:
             browser.get("https://www.baidu.com")
-            print("✅ 页面访问成功!")
+            logger.info("✅ 页面访问成功!")
             browser.quit()
-            print("✅ 浏览器已关闭")
+            logger.info("✅ 浏览器已关闭")
         except Exception as e:
-            print("❌ 页面访问失败: {}".format(e))
+            logger.error("❌ 页面访问失败: {}".format(e))
             browser.quit()
     else:
-        print("❌ 浏览器创建失败")
+        logger.error("❌ 浏览器创建失败")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "test":
