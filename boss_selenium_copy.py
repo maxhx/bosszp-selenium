@@ -153,12 +153,14 @@ def create_browser():
         options.add_argument('--disable-plugins')
         if not DEBUG_MODE:
             options.add_argument('--disable-images')
-            options.add_argument('--disable-javascript')
+            # 重要：不禁用JavaScript，Boss直聘需要JS
+            # options.add_argument('--disable-javascript')  # 注释掉这行
         options.add_argument('--disable-web-security')
         options.add_argument('--disable-features=VizDisplayCompositor')
         
-        # 设置超时
+        # 设置超时和窗口大小
         options.add_argument('--timeout=30')
+        options.add_argument('--window-size=1920,1080')
         
         # 尝试不同的Firefox路径
         firefox_paths = [
@@ -171,14 +173,14 @@ def create_browser():
         
         firefox_found = False
         for path in firefox_paths:
-            if os.path.exists(path):
-                logger.info("找到Firefox: {}".format(path))
+            if os.path.exists(path) and os.access(path, os.X_OK):
+                logger.info("找到可执行的Firefox: {}".format(path))
                 options.binary_location = path
                 firefox_found = True
                 break
         
         if not firefox_found:
-            logger.warning("未找到Firefox浏览器，使用默认路径")
+            logger.warning("未找到可执行的Firefox浏览器，使用默认路径")
         
         # 检查geckodriver
         geckodriver_paths = [
@@ -199,6 +201,8 @@ def create_browser():
         if not geckodriver_found:
             logger.error("未找到可执行的geckodriver")
             logger.error("请运行: chmod +x update_geckodriver.sh && ./update_geckodriver.sh")
+            logger.error("或手动安装: wget https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz")
+            logger.error("解压后: chmod +x geckodriver && mv geckodriver /usr/local/bin/")
             return None
         
         # 测试geckodriver版本
@@ -231,12 +235,16 @@ def create_browser():
                     display = os.environ.get('DISPLAY')
                     if not display:
                         logger.error("未设置DISPLAY环境变量")
-                        logger.error("请先运行以下命令:")
-                        logger.error("apt-get install xvfb")
-                        logger.error("Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &")
-                        logger.error("export DISPLAY=:99")
-                        logger.error("然后重新运行程序")
+                        logger.error("解决方案:")
+                        logger.error("1. 使用xvfb-run: xvfb-run -a python3 boss_selenium_copy.py")
+                        logger.error("2. 手动设置虚拟显示:")
+                        logger.error("   apt-get install xvfb")
+                        logger.error("   Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &")
+                        logger.error("   export DISPLAY=:99")
+                        logger.error("3. 使用提供的启动脚本: chmod +x run_with_xvfb.sh && ./run_with_xvfb.sh")
                         return None
+                    else:
+                        logger.info("DISPLAY环境变量已设置: {}".format(display))
         
         logger.info("正在启动Firefox浏览器...")
         browser = webdriver.Firefox(options=options)
@@ -245,10 +253,14 @@ def create_browser():
         
     except Exception as e:
         logger.error("创建浏览器失败: {}".format(e))
+        logger.error("详细错误信息:")
+        logger.exception("异常堆栈:")
         logger.error("可能的解决方案:")
         logger.error("1. 安装Firefox: apt-get install firefox-esr")
         logger.error("2. 安装geckodriver: wget https://github.com/mozilla/geckodriver/releases/download/v0.33.0/geckodriver-v0.33.0-linux64.tar.gz")
         logger.error("3. 检查权限: chmod +x /usr/local/bin/geckodriver")
+        logger.error("4. 使用xvfb-run: xvfb-run -a python3 boss_selenium_copy.py")
+        logger.error("5. 使用启动脚本: chmod +x run_with_xvfb.sh && ./run_with_xvfb.sh")
         return None
 
 city_map = {
