@@ -46,7 +46,7 @@ def get_dashboard_stats():
         from dbutils import DBUtils
         
         # 初始化配置和数据库
-        config_manager = ConfigManager()
+        config_manager = ConfigManager('src/utils/config.json', env='production')
         db_config = config_manager.get_database_config()
         
         if not db_config:
@@ -129,7 +129,7 @@ def execute_sql_query():
         from src.utils.config import ConfigManager
         from dbutils import DBUtils
         
-        config_manager = ConfigManager()
+        config_manager = ConfigManager('src/utils/config.json', env='production')
         db_config = config_manager.get_database_config()
         
         if not db_config:
@@ -154,7 +154,7 @@ def get_table_info():
         from src.utils.config import ConfigManager
         from dbutils import DBUtils
         
-        config_manager = ConfigManager()
+        config_manager = ConfigManager('src/utils/config.json', env='production')
         db_config = config_manager.get_database_config()
         
         if not db_config:

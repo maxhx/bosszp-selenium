@@ -298,11 +298,11 @@
         <!-- 图表区域 -->
         <div class="charts-grid">
             <div class="chart-container">
-                <div class="chart-title">省份职位分布</div>
+                <div class="chart-title">工作经验分布</div>
                 <canvas id="provinceChart" width="400" height="300"></canvas>
             </div>
             <div class="chart-container">
-                <div class="chart-title">行业分布</div>
+                <div class="chart-title">抓取时间趋势</div>
                 <canvas id="industryChart" width="400" height="300"></canvas>
             </div>
             <div class="chart-container">
@@ -352,18 +352,25 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadDashboardData();
             loadSQLExamples();
-            loadTableInfo();
         });
 
         // 加载仪表盘数据
         async function loadDashboardData() {
             try {
+                console.log('开始加载仪表盘数据...');
                 const response = await fetch('/api/dashboard/stats');
+                console.log('响应状态:', response.status);
+                
                 const result = await response.json();
+                console.log('API响应结果:', result);
                 
                 if (result.success) {
+                    console.log('数据加载成功，开始更新界面...');
                     updateStatsCards(result.data);
                     createCharts(result.data);
+                    
+                    // 加载表信息
+                    await loadTableInfo();
                 } else {
                     console.error('加载数据失败:', result.error);
                 }
@@ -374,23 +381,76 @@
 
         // 更新统计卡片
         function updateStatsCards(data) {
-            document.getElementById('totalJobs').textContent = data.total_jobs.toLocaleString();
+            console.log('更新统计卡片，数据:', data);
             
-            // 从表信息API获取更详细的统计
-            loadTableInfo();
+            // 更新总职位数
+            if (data.total_jobs !== undefined) {
+                const element = document.getElementById('totalJobs');
+                if (element) {
+                    element.textContent = data.total_jobs.toLocaleString();
+                    console.log('总职位数已更新:', data.total_jobs);
+                } else {
+                    console.error('找不到总职位数元素');
+                }
+            } else {
+                console.error('total_jobs 数据不存在');
+            }
+            
+            // 更新其他统计信息（从仪表盘API获取）
+            if (data.total_companies !== undefined) {
+                const element = document.getElementById('uniqueCompanies');
+                if (element) {
+                    element.textContent = data.total_companies.toLocaleString();
+                    console.log('企业数量已更新:', data.total_companies);
+                } else {
+                    console.error('找不到企业数量元素');
+                }
+            } else {
+                console.error('total_companies 数据不存在');
+            }
         }
 
         // 加载表信息
         async function loadTableInfo() {
             try {
+                console.log('开始加载表信息...');
                 const response = await fetch('/api/sql/tables');
                 const result = await response.json();
                 
                 if (result.success) {
                     const stats = result.data.table_stats;
-                    document.getElementById('uniqueProvinces').textContent = stats.unique_provinces;
-                    document.getElementById('uniqueIndustries').textContent = stats.unique_industries;
-                    document.getElementById('uniqueCompanies').textContent = stats.unique_companies;
+                    console.log('表统计信息:', stats);
+                    
+                    // 更新省份数量
+                    if (stats.unique_provinces !== undefined) {
+                        const element = document.getElementById('uniqueProvinces');
+                        if (element) {
+                            element.textContent = stats.unique_provinces;
+                            console.log('省份数量已更新:', stats.unique_provinces);
+                        } else {
+                            console.error('找不到省份数量元素');
+                        }
+                    } else {
+                        console.error('省份数量数据不存在');
+                    }
+                    
+                    // 更新行业数量
+                    if (stats.unique_industries !== undefined) {
+                        const element = document.getElementById('uniqueIndustries');
+                        if (element) {
+                            element.textContent = stats.unique_industries;
+                            console.log('行业数量已更新:', stats.unique_industries);
+                        } else {
+                            console.error('找不到行业数量元素');
+                        }
+                    } else {
+                        console.error('行业数量数据不存在');
+                    }
+                    
+                    // 注意：企业数量已经在updateStatsCards中设置了，这里不再覆盖
+                    console.log('表信息加载完成，企业数量保持原值');
+                } else {
+                    console.error('表信息API返回失败:', result.error);
                 }
             } catch (error) {
                 console.error('加载表信息失败:', error);
@@ -399,17 +459,35 @@
 
         // 创建图表
         function createCharts(data) {
-            // 省份分布图表
-            createProvinceChart(data.province_stats);
-            
-            // 行业分布图表
-            createIndustryChart(data.industry_stats);
+            console.log('开始创建图表，数据:', data);
             
             // 薪资分布图表
-            createSalaryChart(data.salary_stats);
+            if (data.salary_stats && data.salary_stats.length > 0) {
+                createSalaryChart(data.salary_stats);
+            } else {
+                console.warn('薪资统计数据不存在或为空');
+            }
             
             // 学历分布图表
-            createEducationChart(data.education_stats);
+            if (data.education_stats && data.education_stats.length > 0) {
+                createEducationChart(data.education_stats);
+            } else {
+                console.warn('学历统计数据不存在或为空');
+            }
+            
+            // 工作经验分布图表
+            if (data.experience_stats && data.experience_stats.length > 0) {
+                createExperienceChart(data.experience_stats);
+            } else {
+                console.warn('工作经验统计数据不存在或为空');
+            }
+            
+            // 时间分布图表
+            if (data.time_stats && data.time_stats.length > 0) {
+                createTimeChart(data.time_stats);
+            } else {
+                console.warn('时间统计数据不存在或为空');
+            }
         }
 
         // 创建省份分布图表
@@ -467,54 +545,127 @@
 
         // 创建薪资分布图表
         function createSalaryChart(data) {
-            const ctx = document.getElementById('salaryChart').getContext('2d');
-            charts.salary = new Chart(ctx, {
-                type: 'horizontalBar',
-                data: {
-                    labels: data.map(item => item.job_salary_range),
-                    datasets: [{
-                        label: '职位数量',
-                        data: data.map(item => item.count),
-                        backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        x: {
-                            beginAtZero: true
+            try {
+                const ctx = document.getElementById('salaryChart').getContext('2d');
+                charts.salary = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(item => item.job_salary_range),
+                        datasets: [{
+                            label: '职位数量',
+                            data: data.map(item => item.count),
+                            backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true
+                            }
                         }
                     }
-                }
-            });
+                });
+                console.log('薪资分布图表创建成功');
+            } catch (error) {
+                console.error('创建薪资分布图表失败:', error);
+            }
         }
 
         // 创建学历分布图表
         function createEducationChart(data) {
-            const ctx = document.getElementById('educationChart').getContext('2d');
-            charts.education = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: data.map(item => item.job_education),
-                    datasets: [{
-                        data: data.map(item => item.count),
-                        backgroundColor: [
-                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-                            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
+            try {
+                const ctx = document.getElementById('educationChart').getContext('2d');
+                charts.education = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: data.map(item => item.job_education),
+                        datasets: [{
+                            data: data.map(item => item.count),
+                            backgroundColor: [
+                                '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                                '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
                         }
                     }
-                }
-            });
+                });
+                console.log('学历分布图表创建成功');
+            } catch (error) {
+                console.error('创建学历分布图表失败:', error);
+            }
+        }
+
+        // 创建工作经验分布图表
+        function createExperienceChart(data) {
+            try {
+                const ctx = document.getElementById('provinceChart').getContext('2d');
+                charts.experience = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(item => item.job_experience),
+                        datasets: [{
+                            label: '职位数量',
+                            data: data.map(item => item.count),
+                            backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                            borderColor: 'rgba(102, 126, 234, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+                console.log('工作经验图表创建成功');
+            } catch (error) {
+                console.error('创建工作经验图表失败:', error);
+            }
+        }
+
+        // 创建时间分布图表
+        function createTimeChart(data) {
+            try {
+                const ctx = document.getElementById('industryChart').getContext('2d');
+                charts.time = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.map(item => item.create_time),
+                        datasets: [{
+                            label: '职位数量',
+                            data: data.map(item => item.count),
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+                console.log('时间分布图表创建成功');
+            } catch (error) {
+                console.error('创建时间分布图表失败:', error);
+            }
         }
 
         // 加载SQL示例

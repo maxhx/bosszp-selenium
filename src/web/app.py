@@ -11,11 +11,19 @@ import json
 import re
 from typing import Dict, Any, Optional
 
+import sys
+import os
+# Add the project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from src.utils.config import ConfigManager
 from src.utils.logger import LoggerManager
 from src.database.models import JobRepository
+from src.database.connection_manager import get_connection_manager, close_connection_manager
 
-def create_app(config_file: str = 'config.json', env: str = 'production') -> Flask:
+def create_app(config_file: str = 'src/utils/config.json', env: str = 'production') -> Flask:
     """Flask应用工厂函数"""
     
     # 创建Flask应用
@@ -24,22 +32,23 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
     
     # 初始化配置和日志
     config_manager = ConfigManager(config_file, env)
-    logger_manager = LoggerManager(debug_mode=(env == 'development'))
+    logger_manager = LoggerManager(debug_mode=(env == 'production'))
     logger = logger_manager.get_logger('web_app')
     
-    # 初始化数据库连接
+    # 初始化数据库连接管理器
+    connection_manager = None
     job_repository = None
     try:
-        from dbutils import DBUtils
         db_config = config_manager.get_database_config()
         if db_config:
-            db = DBUtils(**db_config)
-            job_repository = JobRepository(db)
-            logger.info("数据库连接成功")
+            connection_manager = get_connection_manager(db_config)
+            # 测试连接
+            connection_manager.execute_one("SELECT 1 as test")
+            logger.info("数据库连接管理器初始化成功")
         else:
             logger.error("数据库配置无效")
     except Exception as e:
-        logger.error(f"数据库连接失败: {e}")
+        logger.error(f"数据库连接管理器初始化失败: {e}")
     
     def validate_sql(sql: str) -> tuple[bool, str]:
         """验证SQL语句的安全性"""
@@ -65,16 +74,22 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
     def get_dashboard_stats():
         """获取仪表盘统计数据"""
         try:
-            if not job_repository:
+            if not connection_manager:
                 return jsonify({'success': False, 'error': '数据库连接未初始化'})
             
-            stats = job_repository.get_job_statistics()
+            # 获取基本统计
+            total_jobs = connection_manager.execute_one("SELECT COUNT(*) as count FROM job_info")
+            total_companies = connection_manager.execute_one("SELECT COUNT(DISTINCT job_company) as count FROM job_info")
+            total_locations = connection_manager.execute_one("SELECT COUNT(DISTINCT job_location) as count FROM job_info")
             
-            # 获取更多统计数据
-            db = job_repository.db
+            stats = {
+                'total_jobs': total_jobs.get('count', 0) if total_jobs else 0,
+                'total_companies': total_companies.get('count', 0) if total_companies else 0,
+                'total_locations': total_locations.get('count', 0) if total_locations else 0
+            }
             
             # 按薪资范围统计
-            salary_stats = db.select_all("""
+            salary_stats = connection_manager.execute_query("""
                 SELECT job_salary_range, COUNT(*) as count 
                 FROM job_info 
                 WHERE job_salary_range IS NOT NULL AND job_salary_range != '' 
@@ -84,7 +99,7 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             """)
             
             # 按学历要求统计
-            education_stats = db.select_all("""
+            education_stats = connection_manager.execute_query("""
                 SELECT job_education, COUNT(*) as count 
                 FROM job_info 
                 WHERE job_education IS NOT NULL AND job_education != '' 
@@ -93,7 +108,7 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             """)
             
             # 按工作经验统计
-            experience_stats = db.select_all("""
+            experience_stats = connection_manager.execute_query("""
                 SELECT job_experience, COUNT(*) as count 
                 FROM job_info 
                 WHERE job_experience IS NOT NULL AND job_experience != '' 
@@ -102,7 +117,7 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             """)
             
             # 按抓取时间统计（最近7天）
-            time_stats = db.select_all("""
+            time_stats = connection_manager.execute_query("""
                 SELECT create_time, COUNT(*) as count 
                 FROM job_info 
                 WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
@@ -140,10 +155,10 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             if not is_valid:
                 return jsonify({'success': False, 'error': message})
             
-            if not job_repository:
+            if not connection_manager:
                 return jsonify({'success': False, 'error': '数据库连接未初始化'})
             
-            results = job_repository.db.select_all(sql)
+            results = connection_manager.execute_query(sql)
             
             return jsonify({
                 'success': True,
@@ -158,16 +173,14 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
     def get_table_info():
         """获取数据库表信息"""
         try:
-            if not job_repository:
+            if not connection_manager:
                 return jsonify({'success': False, 'error': '数据库连接未初始化'})
             
-            db = job_repository.db
-            
             # 获取表结构
-            table_info = db.select_all("DESCRIBE job_info")
+            table_info = connection_manager.execute_query("DESCRIBE job_info")
             
             # 获取表统计信息
-            table_stats = db.select_one("""
+            table_stats = connection_manager.execute_one("""
                 SELECT 
                     COUNT(*) as total_records,
                     COUNT(DISTINCT province) as unique_provinces,
@@ -229,13 +242,11 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
     def get_spider_status():
         """获取爬虫状态"""
         try:
-            if not job_repository:
+            if not connection_manager:
                 return jsonify({'success': False, 'error': '数据库连接未初始化'})
             
-            db = job_repository.db
-            
             # 获取最近抓取的数据统计
-            recent_stats = db.select_one("""
+            recent_stats = connection_manager.execute_one("""
                 SELECT 
                     COUNT(*) as total_jobs,
                     MAX(create_time) as last_crawl_time,
@@ -244,7 +255,7 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             """)
             
             # 获取今日抓取数量
-            today_stats = db.select_one("""
+            today_stats = connection_manager.execute_one("""
                 SELECT COUNT(*) as today_jobs
                 FROM job_info 
                 WHERE create_time = CURDATE()
@@ -263,9 +274,19 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             logger.error(f"获取爬虫状态失败: {e}")
             return jsonify({'success': False, 'error': str(e)})
     
+    # 添加应用关闭时的清理逻辑
+    @app.teardown_appcontext
+    def close_db(error):
+        """应用上下文关闭时清理资源"""
+        pass  # 连接管理器会在应用关闭时自动清理
+    
     return app
 
 # 使用示例
 if __name__ == '__main__':
-    app = create_app(env='development')
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app = create_app(env='production')
+    try:
+        app.run(debug=False, host='0.0.0.0', port=5000)
+    finally:
+        # 确保连接管理器被正确关闭
+        close_connection_manager()

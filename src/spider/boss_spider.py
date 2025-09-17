@@ -353,6 +353,6 @@ class BossSpider(BaseSpider):
 
 # 使用示例
 if __name__ == '__main__':
-    with BossSpider(env='development') as spider:
+    with BossSpider(env='production') as spider:
         saved_count = spider.crawl_jobs(['Java开发工程师', 'Python开发工程师'])
         print(f"爬取完成，保存了 {saved_count} 个职位")
