@@ -1,2 +1,5 @@
 venv/
 __pycache__/
+
+# 忽略 logs 目录
+logs/
