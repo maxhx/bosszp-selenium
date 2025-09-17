@@ -25,14 +25,30 @@ def check_dependencies():
 def check_database():
     """检查数据库连接"""
     try:
-        from dbutils import DBUtils
-        db = DBUtils('localhost', 'root', '123456', 'spider_db')
-        db.close()
-        print("✓ 数据库连接正常")
-        return True
+        from src.database.connection_manager import get_connection_manager, close_connection_manager
+        from src.utils.config import ConfigManager
+        
+        # 使用生产环境配置
+        config = ConfigManager('src/utils/config.json', env='production')
+        db_config = config.get_database_config()
+        
+        if not db_config:
+            print("✗ 生产环境数据库配置无效")
+            return False
+            
+        # 使用连接管理器测试连接
+        manager = get_connection_manager(db_config)
+        if manager.test_connection():
+            print("✓ 生产环境数据库连接正常")
+            close_connection_manager()
+            return True
+        else:
+            print("✗ 生产环境数据库连接测试失败")
+            close_connection_manager()
+            return False
     except Exception as e:
         print(f"✗ 数据库连接失败: {e}")
-        print("请确保MySQL服务已启动，并且数据库配置正确")
+        print("请确保MySQL服务已启动，并且生产环境数据库配置正确")
         return False
 
 def main():
@@ -49,15 +65,16 @@ def main():
     if not check_database():
         return
     
-    print("\n正在启动仪表盘服务...")
+    print("\n正在启动仪表盘服务（生产环境）...")
     print("访问地址: http://localhost:5000")
     print("按 Ctrl+C 停止服务")
     print("-" * 50)
     
     # 启动Flask应用
     try:
-        from dashboard_app import app
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        from src.web.app import create_app
+        app = create_app(env='production')
+        app.run(debug=False, host='0.0.0.0', port=5000)
     except KeyboardInterrupt:
         print("\n服务已停止")
     except Exception as e:
