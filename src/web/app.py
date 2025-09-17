@@ -49,7 +49,7 @@ def create_app(config_file: str = 'config.json', env: str = 'production') -> Fla
             return False, "只允许执行SELECT查询语句"
         
         # 禁止危险操作
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE']
+        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'EXEC', 'EXECUTE']
         for keyword in dangerous_keywords:
             if keyword in sql:
                 return False, f"禁止使用 {keyword} 操作"
