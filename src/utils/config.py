@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 class ConfigManager:
     """配置管理器"""
     
-    def __init__(self, config_file: str = 'config.json', env: str = 'production'):
+    def __init__(self, config_file: str = 'src/utils/config.json', env: str = 'production'):
         self.config_file = config_file
         self.env = env
         self._config: Optional[Dict[str, Any]] = None

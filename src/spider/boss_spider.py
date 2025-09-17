@@ -5,6 +5,13 @@
 # @function: 项目重构示例 - 基础爬虫类
 # @version : V1
 
+import sys
+import os
+# Add the project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,7 +19,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.firefox.options import Options
 from typing import Optional, List, Dict, Any
 import time
-import os
 
 from src.utils.config import ConfigManager
 from src.utils.logger import LoggerManager
@@ -22,14 +28,14 @@ from src.constants.cities import CITY_MAP
 class BaseSpider:
     """基础爬虫类"""
     
-    def __init__(self, config_file: str = 'config.json', env: str = 'production'):
+    def __init__(self, config_file: str = 'src/utils/config.json', env: str = 'production'):
         self.config_manager = ConfigManager(config_file, env)
         self.logger_manager = LoggerManager(debug_mode=(env == 'development'))
         self.logger = self.logger_manager.get_logger(self.__class__.__name__)
         self.spider_logger = self.logger_manager.get_spider_logger()
         
         self.browser: Optional[webdriver.Firefox] = None
-        self.job_repository: Optional[JobRepository] = None
+        self.connection_manager = None
         
         # 初始化组件
         self._setup_database()
@@ -38,16 +44,21 @@ class BaseSpider:
     def _setup_database(self) -> None:
         """设置数据库连接"""
         try:
-            from dbutils import DBUtils
+            from src.database.connection_manager import get_connection_manager
             db_config = self.config_manager.get_database_config()
             if db_config:
-                db = DBUtils(**db_config)
-                self.job_repository = JobRepository(db)
-                self.logger.info("数据库连接成功")
+                self.connection_manager = get_connection_manager(db_config)
+                # 测试连接
+                if self.connection_manager.test_connection():
+                    self.logger.info("数据库连接成功")
+                else:
+                    self.logger.error("数据库连接测试失败")
+                    self.connection_manager = None
             else:
                 self.logger.error("数据库配置无效")
         except Exception as e:
             self.logger.error(f"数据库连接失败: {e}")
+            self.connection_manager = None
     
     def _setup_browser(self) -> None:
         """设置浏览器"""
@@ -63,15 +74,26 @@ class BaseSpider:
             options.add_argument('--disable-gpu')
             options.add_argument('--window-size=1920,1080')
             
-            # 查找Firefox路径
-            firefox_path = self._find_firefox_path()
-            if firefox_path:
-                options.binary_location = firefox_path
+            # 检测操作系统
+            import platform
+            system = platform.system().lower()
             
-            # 查找geckodriver路径
-            geckodriver_path = self._find_geckodriver_path()
-            if not geckodriver_path:
-                raise Exception("未找到geckodriver")
+            if system == 'windows':
+                # Windows系统下不检查Firefox和geckodriver路径
+                self.logger.info("检测到Windows系统，跳过Firefox和geckodriver路径检查")
+            else:
+                # Linux/Ubuntu系统下检查Firefox和geckodriver路径
+                self.logger.info(f"检测到{system}系统，检查Firefox和geckodriver路径")
+                
+                # 查找Firefox路径
+                firefox_path = self._find_firefox_path()
+                if firefox_path:
+                    options.binary_location = firefox_path
+                
+                # 查找geckodriver路径
+                geckodriver_path = self._find_geckodriver_path()
+                if not geckodriver_path:
+                    raise Exception("未找到geckodriver")
             
             self.browser = webdriver.Firefox(options=options)
             self.logger.info("浏览器启动成功")
@@ -147,20 +169,46 @@ class BaseSpider:
     
     def save_job_info(self, job_info: JobInfo) -> bool:
         """保存职位信息"""
-        if not self.job_repository:
+        if not self.connection_manager:
             self.logger.error("数据库连接未初始化")
             return False
         
         try:
-            success = self.job_repository.save_job(job_info)
-            if success:
+            # 检查是否已存在
+            if self.job_exists(job_info):
+                self.logger.debug(f"职位已存在: {job_info.job_title} - {job_info.job_company}")
+                return False
+            
+            # 插入数据
+            sql = """
+                INSERT INTO job_info(
+                    category, sub_category, job_title, province, job_location,
+                    job_company, job_industry, job_finance, job_scale, job_welfare,
+                    job_salary_range, job_experience, job_education, job_skills, create_time
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            params = job_info.to_tuple()
+            rows_affected = self.connection_manager.execute_insert(sql, params)
+            
+            if rows_affected > 0:
                 self.logger.info(f"成功保存职位: {job_info.job_title} - {job_info.job_company}")
                 self.spider_logger.info(f"保存职位: {job_info.job_title}|{job_info.job_company}|{job_info.job_location}")
+                return True
             else:
-                self.logger.debug(f"职位已存在或保存失败: {job_info.job_title} - {job_info.job_company}")
-            return success
+                self.logger.debug(f"保存职位失败: {job_info.job_title} - {job_info.job_company}")
+                return False
         except Exception as e:
             self.logger.error(f"保存职位失败: {e}")
+            return False
+    
+    def job_exists(self, job_info: JobInfo) -> bool:
+        """检查职位是否已存在"""
+        try:
+            sql = "SELECT 1 FROM job_info WHERE job_title=%s AND job_company=%s AND job_location=%s"
+            result = self.connection_manager.execute_one(sql, job_info.get_unique_key())
+            return result is not None
+        except Exception as e:
+            self.logger.error(f"检查职位存在性失败: {e}")
             return False
     
     def close(self) -> None:
@@ -170,8 +218,7 @@ class BaseSpider:
             self.browser.quit()
             self.logger.info("浏览器已关闭")
         
-        if self.job_repository and hasattr(self.job_repository.db, 'close'):
-            self.job_repository.db.close()
+        # 连接管理器会在应用关闭时自动清理，这里不需要手动关闭
     
     def __enter__(self):
         """上下文管理器入口"""
@@ -194,7 +241,7 @@ class BossSpider(BaseSpider):
             self.logger.error("浏览器未初始化")
             return 0
         
-        if not self.job_repository:
+        if not self.connection_manager:
             self.logger.error("数据库未初始化")
             return 0
         

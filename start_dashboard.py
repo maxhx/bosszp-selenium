@@ -25,7 +25,7 @@ def check_dependencies():
 def check_database():
     """检查数据库连接"""
     try:
-        from dbutils import DBUtils
+        from src.database.connection_manager import get_connection_manager, close_connection_manager
         from src.utils.config import ConfigManager
         
         # 使用生产环境配置
@@ -36,10 +36,16 @@ def check_database():
             print("✗ 生产环境数据库配置无效")
             return False
             
-        db = DBUtils(**db_config)
-        db.close()
-        print("✓ 生产环境数据库连接正常")
-        return True
+        # 使用连接管理器测试连接
+        manager = get_connection_manager(db_config)
+        if manager.test_connection():
+            print("✓ 生产环境数据库连接正常")
+            close_connection_manager()
+            return True
+        else:
+            print("✗ 生产环境数据库连接测试失败")
+            close_connection_manager()
+            return False
     except Exception as e:
         print(f"✗ 数据库连接失败: {e}")
         print("请确保MySQL服务已启动，并且生产环境数据库配置正确")
