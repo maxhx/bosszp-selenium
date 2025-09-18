@@ -315,6 +315,22 @@
             </div>
         </div>
 
+        <!-- 关键字搜索区域 -->
+        <div class="sql-section">
+            <div class="sql-title">关键字搜索</div>
+            
+            <div class="search-input-group">
+                <input type="text" class="search-input" id="keywordInput" placeholder="请输入搜索关键字，如：花都、Python、腾讯等..." value="花都">
+                <button class="btn btn-primary" onclick="searchByKeyword()">搜索职位</button>
+                <button class="btn btn-secondary" onclick="clearSearch()">清空</button>
+            </div>
+
+            <div class="search-results-section" id="searchResultsSection" style="display: none;">
+                <h4>搜索结果</h4>
+                <div id="searchResultsContent"></div>
+            </div>
+        </div>
+
         <!-- SQL查询区域 -->
         <div class="sql-section">
             <div class="sql-title">自定义SQL查询</div>

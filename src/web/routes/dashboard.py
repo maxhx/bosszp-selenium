@@ -20,7 +20,7 @@ def validate_sql(sql: str) -> tuple[bool, str]:
         return False, "只允许执行SELECT查询语句"
     
     # 禁止危险操作
-    dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE']
+    dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'EXEC', 'EXECUTE']
     for keyword in dangerous_keywords:
         if keyword in sql:
             return False, f"禁止使用 {keyword} 操作"
@@ -219,10 +219,74 @@ def get_table_info():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@dashboard_bp.route('/api/search/keyword', methods=['POST'])
+def search_by_keyword():
+    """根据关键字搜索职位"""
+    try:
+        data = request.get_json()
+        keyword = data.get('keyword', '').strip()
+        
+        if not keyword:
+            return jsonify({'success': False, 'error': '关键字不能为空'})
+        
+        from src.utils.config import ConfigManager
+        from dbutils import DBUtils
+        
+        config_manager = ConfigManager('src/utils/config.json', env='production')
+        db_config = config_manager.get_database_config()
+        
+        if not db_config:
+            return jsonify({'success': False, 'error': '数据库配置无效'})
+        
+        db = DBUtils(**db_config)
+        
+        # 搜索关键字在职位标题、公司名称、工作地点、技能要求等字段中
+        sql = """
+            SELECT job_title, job_company, job_location, job_salary_range, 
+                   job_experience, job_education, job_skills, create_time
+            FROM job_info 
+            WHERE job_title LIKE %s 
+               OR job_company LIKE %s 
+               OR job_location LIKE %s 
+               OR job_skills LIKE %s
+            ORDER BY create_time DESC 
+            LIMIT 50
+        """
+        
+        keyword_pattern = f'%{keyword}%'
+        results = db.select_all(sql, (keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern))
+        
+        # 获取统计信息
+        count_sql = """
+            SELECT COUNT(*) as total_count
+            FROM job_info 
+            WHERE job_title LIKE %s 
+               OR job_company LIKE %s 
+               OR job_location LIKE %s 
+               OR job_skills LIKE %s
+        """
+        count_result = db.select_one(count_sql, (keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern))
+        
+        db.close()
+        
+        return jsonify({
+            'success': True,
+            'data': results,
+            'total_count': count_result['total_count'],
+            'keyword': keyword
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @dashboard_bp.route('/api/sql/examples')
 def get_sql_examples():
     """获取SQL查询示例"""
     examples = [
+        {
+            'title': '查询花都区相关职位',
+            'sql': "SELECT job_title, job_company, job_location, job_salary_range FROM job_info WHERE job_location LIKE '%花都%' LIMIT 20",
+            'description': '查询花都区相关的职位信息'
+        },
         {
             'title': '查询各城市职位数量',
             'sql': 'SELECT job_location, COUNT(*) as count FROM job_info GROUP BY job_location ORDER BY count DESC LIMIT 20',
