@@ -57,7 +57,37 @@ def get_dashboard_stats():
         
         stats = job_repository.get_job_statistics()
         
+        # 获取总职位数（如果JobRepository没有提供）
+        if 'total_jobs' not in stats:
+            total_jobs = db.select_one("SELECT COUNT(*) as count FROM job_info")['count']
+            stats['total_jobs'] = total_jobs
+        
+        # 获取企业数量
+        if 'total_companies' not in stats:
+            total_companies = db.select_one("SELECT COUNT(DISTINCT job_company) as count FROM job_info")['count']
+            stats['total_companies'] = total_companies
+        
         # 获取更多统计数据
+        # 按省份统计
+        province_stats = db.select_all("""
+            SELECT province, COUNT(*) as count 
+            FROM job_info 
+            WHERE province IS NOT NULL AND province != '' 
+            GROUP BY province 
+            ORDER BY count DESC 
+            LIMIT 10
+        """)
+        
+        # 按行业统计
+        industry_stats = db.select_all("""
+            SELECT job_industry, COUNT(*) as count 
+            FROM job_info 
+            WHERE job_industry IS NOT NULL AND job_industry != '' 
+            GROUP BY job_industry 
+            ORDER BY count DESC 
+            LIMIT 10
+        """)
+        
         # 按薪资范围统计
         salary_stats = db.select_all("""
             SELECT job_salary_range, COUNT(*) as count 
@@ -96,6 +126,8 @@ def get_dashboard_stats():
         """)
         
         stats.update({
+            'province_stats': province_stats,
+            'industry_stats': industry_stats,
             'salary_stats': salary_stats,
             'education_stats': education_stats,
             'experience_stats': experience_stats,

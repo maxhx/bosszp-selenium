@@ -447,8 +447,15 @@
                         console.error('行业数量数据不存在');
                     }
                     
-                    // 注意：企业数量已经在updateStatsCards中设置了，这里不再覆盖
-                    console.log('表信息加载完成，企业数量保持原值');
+                    // 更新企业数量（如果updateStatsCards中没有设置）
+                    if (stats.unique_companies !== undefined) {
+                        const element = document.getElementById('uniqueCompanies');
+                        if (element && element.textContent === '-') {
+                            element.textContent = stats.unique_companies;
+                            console.log('企业数量已更新:', stats.unique_companies);
+                        }
+                    }
+                    console.log('表信息加载完成');
                 } else {
                     console.error('表信息API返回失败:', result.error);
                 }
