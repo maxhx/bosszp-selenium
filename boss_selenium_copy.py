@@ -353,7 +353,7 @@ def main():
             sub_category = current_a.accessible_name 
 
             # 只抓取java或python相关岗位
-            if not (('java' in sub_category.lower()) or ('python' in sub_category.lower())):
+            if not (('java' in sub_category.lower()) or ('python' in sub_category.lower()) or ('rpa' in sub_category.lower()) or ('运维工程师' in sub_category)):
                 logger.debug("跳过非目标岗位: {}".format(sub_category))
                 continue
 
