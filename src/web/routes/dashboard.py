@@ -284,7 +284,7 @@ def get_sql_examples():
     examples = [
         {
             'title': '查询花都区相关职位',
-            'sql': "SELECT job_title, job_company, job_location, job_salary_range FROM job_info WHERE job_location LIKE '%花都%' LIMIT 20",
+            'sql': "SELECT job_title, job_company, job_location, job_salary_range FROM job_info WHERE job_location LIKE '%花都%' order by job_company ",
             'description': '查询花都区相关的职位信息'
         },
         {
